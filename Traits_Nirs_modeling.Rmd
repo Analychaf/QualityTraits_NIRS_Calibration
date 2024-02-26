@@ -1,0 +1,336 @@
+---
+title: "Quality traits prediction models using NIRS data"
+author: "Chafik Analy"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: false
+    toc_depth: 3
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+    df_print: paged
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load necessary  packages
+
+```{r}
+library(dplyr)
+library(mdatools)
+library(sf)
+library(icardaFIGSr)
+
+```
+
+## Source API functions 
+
+```{r}
+## Please make sure to adjust the nir_api.R file path to use the API call
+
+base::source("/Volumes/Macintosh HD — Data/Desktop/FIGS/icardaFIGSr/nir_api.R")
+
+```
+
+## Get Bread wheat Data
+
+```{r}
+
+## set parameters
+Year = 2017:2020
+QualityLab = "ICARDA-MAR"
+Crop = "Bread wheat"
+
+
+## Nir 
+Nirdata <- getNIRData(qualityLab = QualityLab , crop = Crop,
+                      year = Year )
+## Traits 
+Triatsdata <- getTraitsData(qualityLab = QualityLab , crop = Crop,
+                      year = Year)
+
+```
+
+## Model Calibration using multiple smoothing and preprocessing methods.
+
+```{r}
+## gather trait and corresponding NIR data
+#bw_spectra%>%count(Year)
+
+# Subset Morocco and 2019
+Train_test_data <- Nirdata%>%
+  filter(Year==2019)%>%
+  filter(Country=="Morocco")%>%
+  left_join(Triatsdata, by = "QualityLabPlotNumber")%>%
+  select(Protein, `400`:`2498`)%>%
+  filter(!is.na(Protein))
+
+
+# apply SG filter for smoothing
+pspectra_svg = prep.savgol(Train_test_data[,-1], width = 15, porder = 3)
+
+# apply SG filter for smoothing and take a first derivative
+pspectra_1stD = prep.savgol(Train_test_data[,-1], width = 15, porder = 3, dorder = 1)
+
+# apply SG filter for smoothing and take a second derivative
+pspectra_2ndD = prep.savgol(Train_test_data[,-1], width = 15, porder = 3, dorder = 2)
+
+# apply SNV 
+pspectra_snv = prep.snv(Train_test_data[,-1])
+
+# apply MSC 
+pspectra_msc = prep.msc(as.matrix(Train_test_data[,-1]))
+
+
+#unit area normalization
+pspectra_normarea = prep.norm(Train_test_data[,-1], "area")
+# unit length normalization
+pspectra_normunit = prep.norm(Train_test_data[,-1], "length")
+
+# show results
+mdaplot(Train_test_data[,-1], type = "l", main = "Original")
+mdaplot(pspectra_svg, type = "l", main = "SVG")
+mdaplot(pspectra_snv, type = "l", main = "SNV")
+mdaplot(pspectra_msc, type = "l", main = "MSC")
+mdaplot(pspectra_normarea, type = "l", main = "Normal Area")
+mdaplot(pspectra_normunit, type = "l", main = "Normal unit")
+mdaplot(pspectra_1stD, type = "l", main = "SVG 1st Derivative")
+mdaplot(pspectra_2ndD, type = "l", main = "SVG 2nd Derivative")
+```
+
+## train/test split 
+
+### Train models on unprocessed Nir Data
+
+```{r}
+## Data partition index
+trainIndex = seq(4, 720,3)
+
+Xc <- Train_test_data[trainIndex, -1] # Calibration predictors
+yc <- Train_test_data[trainIndex, 1]  # Calibration response
+
+Xt <- Train_test_data[-trainIndex, -1] # Test predictors
+yt <- Train_test_data[-trainIndex, 1]  # Test response
+
+
+## Fit model on original data
+model_raw <- pls(Xc, yc, 10, scale = TRUE,
+         x.test = Xt, y.test = yt,
+        info = "Protein prediction model")
+
+```
+
+## Train models on processed NIR data
+
+### SNV
+
+```{r}
+
+Xc_snv <- pspectra_snv[trainIndex, -1] # Calibration predictors
+yc_snv <- Train_test_data[trainIndex, 1]  # Calibration response
+
+Xt_snv <- pspectra_snv[-trainIndex, -1] # Test predictors
+yt_snv <- Train_test_data[-trainIndex, 1]  # Test response
+
+model_snv <- pls(Xc_snv, yc_snv, 10, scale = TRUE, 
+                 x.test = Xt_snv, y.test=yt_snv, 
+        info = paste0("Protein prediction model with snv prep"))
+```
+
+### MSC 
+
+```{r}
+
+Xc_msc <- pspectra_msc[trainIndex, -1] # Calibration predictors
+yc_msc <- Train_test_data[trainIndex, 1]  # Calibration response
+
+Xt_msc <- pspectra_msc[-trainIndex, -1] # Test predictors
+yt_msc <- Train_test_data[-trainIndex, 1]  # Test response
+
+model_msc <- pls(Xc_msc, yc_msc, 10, scale = TRUE, 
+                 x.test = Xt_msc, y.test=yt_msc, 
+        info = paste0("Protein prediction model with msc prep"))
+```
+
+### SVG 
+
+```{r}
+
+Xc_svg <- pspectra_svg[trainIndex, -1] # Calibration predictors
+yc_svg <- Train_test_data[trainIndex, 1]  # Calibration response
+
+Xt_svg <- pspectra_svg[-trainIndex, -1] # Test predictors
+yt_svg <- Train_test_data[-trainIndex, 1]  # Test response
+
+
+model_svg <- pls(Xc_svg, yc_svg, 10, scale = TRUE, 
+                 x.test = Xt_svg, y.test=yt_svg, 
+        info = paste0("Protein prediction model with svg prep"))
+```
+
+### SVG 1st Derivative
+
+```{r}
+
+Xc_svg_1D <- pspectra_1stD[trainIndex, -1] # Calibration predictors
+yc_svg_1D <- Train_test_data[trainIndex, 1]  # Calibration response
+
+Xt_svg_1D <- pspectra_1stD[-trainIndex, -1] # Test predictors
+yt_svg_1D <- Train_test_data[-trainIndex, 1]  # Test response
+
+
+model_svg_1D <- pls(Xc_svg_1D, yc_svg_1D, 10, scale = TRUE, 
+                 x.test = Xt_svg_1D, y.test=yt_svg_1D, 
+        info = paste0("Protein prediction model with svg 1st Derivative prep"))
+```
+
+### SVG 2nd Derivative
+
+```{r}
+
+Xc_svg_2D <- pspectra_2ndD[trainIndex, -1] # Calibration predictors
+yc_svg_2D <- Train_test_data[trainIndex, 1]  # Calibration response
+
+Xt_svg_2D <- pspectra_2ndD[-trainIndex, -1] # Test predictors
+yt_svg_2D <- Train_test_data[-trainIndex, 1]  # Test response
+
+
+
+model_svg_2D <- pls(Xc_svg_2D, yc_svg_2D, 10, scale = TRUE, 
+                 x.test = Xt_svg_2D, y.test=yt_svg_2D, 
+        info = paste0("Protein prediction model with svg 2nd Derivative prep"))
+```
+
+
+## Get Models summary
+
+```{r}
+summary(model_raw)
+summary(model_snv)
+summary(model_svg)
+summary(model_msc)
+summary(model_svg_1D)
+summary(model_svg_2D)
+```
+
+## Visualize models results 
+
+
+```{r}
+plot(model_raw)
+```
+
+
+```{r}
+plot(model_snv)
+```
+
+```{r}
+plot(model_msc)
+
+```
+
+```{r}
+plot(model_svg)
+```
+
+```{r}
+plot(model_svg_1D)
+```
+
+```{r}
+plot(model_svg_2D)
+```
+
+## Plot model coefficients
+
+```{r}
+plotRegcoeffs(model_raw)
+plotRegcoeffs(model_msc, ncomp = 5)
+plotRegcoeffs(model_snv, ncomp = 5, type = "l", show.labels = F)
+plotRegcoeffs(model_svg, ncomp = 5)
+```
+
+## plot models predictions
+
+```{r}
+plotPredictions(model_msc)
+plotPredictions(model_snv)
+plotPredictions(model_svg)
+
+```
+
+### Variables importance (wavelengths vs protein)
+
+```{r}
+plotVIPScores(model_msc)
+plotVIPScores(model_msc, ncomp = 2, type = "h", show.labels = F)
+plotSelectivityRatio(model_msc)
+plotSelectivityRatio(model_msc, ncomp = 2, type = "h", show.labels = F)
+```
+
+
+```{r}
+
+## Trying cross validated and autoscaled model on msc prep
+
+vip <- vipscores(model_msc, ncomp = 2)
+
+
+msc_scale_cv_model <- pls(Xc_msc, yc_msc, 10, scale = TRUE, 
+           #      x.test = Xt_msc, y.test=yt_msc,
+           center = TRUE, 
+           cv = 10,
+           exclcols = (vip <0.5),
+        info = paste0("Protein prediction model with MSC prep"))
+
+
+
+plotRegcoeffs(msc_scale_cv_model,
+              ncomp = 2, type = "l", show.ci = TRUE,
+              show.labels = F)
+plotRegcoeffs(msc_scale_cv_model, ncomp = 3,
+              type = "l", show.ci = TRUE, show.labels = F)
+plotRegcoeffs(msc_scale_cv_model,ncomp = 4, type = "l",
+              show.ci = TRUE,
+              show.labels = F)
+plotRegcoeffs(msc_scale_cv_model, ncomp = 5, type = "l",
+              show.ci = TRUE, show.labels = F)
+
+```
+
+### Interval pls modeling
+
+```{r}
+
+msc_ipls_model = ipls(as.matrix(Xc_msc),as.matrix(yc_msc),
+         scale = T, 
+         glob.ncomp = 10, int.num = 10, full = FALSE)
+
+summary(msc_ipls_model)
+```
+
+```{r}
+plotRMSE(msc_ipls_model)
+```
+
+```{r}
+
+plot(msc_ipls_model)
+```
+
+### Model prediction on test set
+
+```{r}
+plotPredictions(model_msc$res$test, show.stat = TRUE)
+plotPredictions(model_snv$res$test, show.stat = TRUE)
+plotPredictions(model_svg$res$test, show.stat = TRUE)
+plotPredictions(model_svg_1D$res$test, show.stat = TRUE)
+plotPredictions(model_svg_2D$res$test, show.stat = TRUE)
+
+```
+
