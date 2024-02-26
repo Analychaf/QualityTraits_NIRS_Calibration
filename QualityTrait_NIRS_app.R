@@ -317,7 +317,9 @@ server <- function(input, output, session) {
     statsDF <- do.call(rbind, statsList)
     rownames(statsDF) <- names(data)
     
+    statsDF <- statsDF[-c(1:17),]
     return(statsDF)
+    
   }
   
   # Reactive expression for NIR data column stats
