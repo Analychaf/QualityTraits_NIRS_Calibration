@@ -30,7 +30,7 @@ library(icardaFIGSr)
 ## Source API functions 
 
 ```{r}
-## Please make sure to adjust the nir_api.R file path to use the API call
+## Please make sure to adjust the nir_api.R file path to use the API call 
 
 base::source("/Volumes/Macintosh HD — Data/Desktop/FIGS/icardaFIGSr/nir_api.R")
 
@@ -61,13 +61,22 @@ Triatsdata <- getTraitsData(qualityLab = QualityLab , crop = Crop,
 ## gather trait and corresponding NIR data
 #bw_spectra%>%count(Year)
 
-# Subset Morocco and 2019
+# Subset Morocco and 2019 for Protein
 Train_test_data <- Nirdata%>%
   filter(Year==2019)%>%
   filter(Country=="Morocco")%>%
   left_join(Triatsdata, by = "QualityLabPlotNumber")%>%
   select(Protein, `400`:`2498`)%>%
   filter(!is.na(Protein))
+
+
+## Subset data with missing trait values to be predicted in PC space
+new_data <- Nirdata%>%
+  filter(Year==2019)%>%
+  filter(Country=="Morocco")%>%
+  left_join(Triatsdata, by = "QualityLabPlotNumber")%>%
+  select(Protein, `400`:`2498`)%>%
+  filter(is.na(Protein))
 
 
 # apply SG filter for smoothing
@@ -85,7 +94,6 @@ pspectra_snv = prep.snv(Train_test_data[,-1])
 # apply MSC 
 pspectra_msc = prep.msc(as.matrix(Train_test_data[,-1]))
 
-
 #unit area normalization
 pspectra_normarea = prep.norm(Train_test_data[,-1], "area")
 # unit length normalization
@@ -101,6 +109,170 @@ mdaplot(pspectra_normunit, type = "l", main = "Normal unit")
 mdaplot(pspectra_1stD, type = "l", main = "SVG 1st Derivative")
 mdaplot(pspectra_2ndD, type = "l", main = "SVG 2nd Derivative")
 ```
+
+## Principal component analysis
+
+### SNV preprocessed data
+
+```{r}
+## Data partition index
+trainIndex <- sample(nrow(Train_test_data), nrow(Train_test_data)*0.75)
+
+#trainIndex = seq(4, 720,3)
+
+Xc <- Train_test_data[trainIndex, -1] # Calibration predictors
+yc <- Train_test_data[trainIndex, 1]  # Calibration response
+
+Xt <- Train_test_data[-trainIndex, -1] # Test predictors
+yt <- Train_test_data[-trainIndex, 1]  # Test response
+
+
+## Fit model on original data
+model_raw <- pls(Xc, yc, 10, scale = TRUE,
+         x.test = Xt, y.test = yt,
+        info = "Protein prediction model")
+
+```
+
+```{r}
+## add trait to dataseet
+snv_pca_input <- cbind(Train_test_data[,1], pspectra_snv)
+
+## Create protein classes
+snv_pca_input <- snv_pca_input%>%
+  mutate(Protein_class = ifelse(Protein <10, "Low_Pro",
+                                ifelse(Protein >=10 & Protein < 12,"Moderate_Pro",
+                                       ifelse(Protein >=12 & Protein < 14, "High_Pro",
+                                         ifelse(Protein>=14,"Veryhigh_Pro", NA)))))%>%
+  select(Protein,Protein_class,3:1052)
+
+## Train test split
+
+## Data partition index
+
+Xc <- snv_pca_input[trainIndex, -c(1,2)] # Calibration predictors (filter out protein and protein class)
+yc <- snv_pca_input[trainIndex, c(1)]  # Calibration response
+
+Xt <- snv_pca_input[-trainIndex, -c(1,2)] # Test predictors (filter out protein and protein class)
+yt <- snv_pca_input[-trainIndex, 1]  # Test response
+
+
+## Fit pca
+snv_pca_res <- pca(Xc, x.test = Xt, ncomp = 5)
+
+## Print results
+print(snv_pca_res)
+
+```
+## Diagnose model results
+
+```{r}
+## scores and loadings
+par(mfrow = c(1, 2))
+mdaplot(snv_pca_res$res$cal$scores, type = "p", show.labels = F, show.lines = c(0, 0))
+mdaplot(snv_pca_res$loadings, type = "p", show.labels = F, show.lines = c(0, 0))
+
+```
+## Create Protein Classes
+
+```{r}
+## Inspect Protein density
+library(ggplot2)
+
+Pro_density <- ggplot(snv_pca_input, aes(x=Protein, fill=Protein_class))+
+  geom_density()
+
+plotly::ggplotly(Pro_density)
+```
+
+
+```{r}
+## Grouping vector for plots
+grouping_vec <- factor(as.matrix(snv_pca_input[trainIndex,"Protein_class"]),
+                       levels = c("Low_Pro","Moderate_Pro","High_Pro", "Veryhigh_Pro"),
+                       labels = c("Low_Pro","Moderate_Pro","High_Pro", "Veryhigh_Pro"))
+
+```
+
+### Scores colored by Protein values
+
+```{r}
+# scores plot for calibration results colored by Protein
+plotScores(snv_pca_res$res$cal, show.labels = F,
+           cgroup = snv_pca_input[trainIndex,"Protein"])
+```
+
+### Scores colored by Protein classes 
+
+```{r}
+# scores plot colored by protein classes and confidence ellipses
+p1 <-plotScores(snv_pca_res$res$cal, c(1, 2),
+               cgroup = grouping_vec)
+plotConfidenceEllipse(p1)
+```
+
+
+```{r}
+p2 <- plotScores(snv_pca_res$res$cal, c(2,3), cgroup = grouping_vec)
+plotConfidenceEllipse(p2)
+```
+
+### Distances and Explained Variance 
+
+```{r}
+# distance plot for calibration results with labels
+plotResiduals(snv_pca_res$res$cal,type = "p", show.labels = FALSE)
+
+# variance plot for calibration results with values as labels
+plotVariance(snv_pca_res$res$cal, type = "h",
+             show.labels = TRUE, labels = "values")
+```
+
+## Loadings
+
+```{r}
+attr(snv_pca_input[,-c(1,1152)], "xaxis.name") = "Wavelength, nm"
+attr(snv_pca_input[,-c(1,1152)], "xaxis.values") = colnames(as.matrix(snv_pca_input[,-c(1,1152)]))
+
+plotLoadings(snv_pca_res, 1:2, type = "l")
+
+```
+
+## Validation tests
+
+```{r}
+plot(snv_pca_res)
+```
+## Compare explained variances between calibration and test data
+
+```{r}
+var = data.frame(
+   cal = snv_pca_res$res$cal$expvar,
+   test = snv_pca_res$res$test$expvar
+)
+show(round(var, 1)%>% 
+       mutate(Cumul_cal = cumsum(cal), Cumul_test = cumsum(test))%>%
+       select(Cumul_cal, Cumul_test))
+
+```
+
+## Validation sets
+
+```{r}
+par(mfrow = c(1, 2))
+plotResiduals(snv_pca_res, ncomp = 2, main = "Validation set (2 PCs)")
+plotResiduals(snv_pca_res, ncomp = 5, main = "Validation set (5 PCs)")
+```
+### Project new data points to PC space
+
+
+
+
+########### End of Principal components analysis #############################
+
+
+########## Start Parial least square Regression #######################@
+
 
 ## train/test split 
 
@@ -319,7 +491,6 @@ plotRMSE(msc_ipls_model)
 ```
 
 ```{r}
-
 plot(msc_ipls_model)
 ```
 
