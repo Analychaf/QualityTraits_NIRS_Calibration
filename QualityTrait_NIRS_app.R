@@ -70,17 +70,15 @@ ui <- dashboardPage(
                 fluidRow(
                   column(4,uiOutput("Selectedtrait")),
                   column(4,selectInput("preprocessingMethod", "Select Preprocessing Method",
-                                       choices = c("SNV"="Standard Normal Variate",
-                                                   "MSC"="Multiplicative Scatter Correction",
-                                                   "SVG" = "Savitski-golay smoothing",
-                                                   "SVG 1stD" = "Savitski-golay smoothing and 1st derivative",
-                                                   "SVG 2nD" = "Savitski-golay smoothing and 2nd derivative",
-                                                   "scaling",
-                                                   "center",
-                                                   "scale_mean_center",
+                                       choices = c("SNV",# = "Standard Normal Variate",
+                                                   "MSC",# = "Multiplicative Scatter Correction",
+                                                   "SVG",# = "Savitski-golay smoothing",
+                                                   "SVG 1stD",# = "Savitski-golay smoothing and 1st derivative",
+                                                   "SVG 2nD" ,#= "Savitski-golay smoothing and 2nd derivative",
                                                    "Length_Normalization",
-                                                   "Area_Normalization"), selected = "SNV")
-                         ), 
+                                                   "Area_Normalization"),
+                                       selected = "SNV")
+                         ),
                   column(4,actionButton("runPreprocessing", "Run Preprocessing", class = "btn-primary")
                   )
                 )
@@ -95,8 +93,13 @@ ui <- dashboardPage(
       tabItem(tabName = "dataAnalysis",
               selectInput("multivariateAnalysis", "Select Multivariate Analysis Method",
                           choices = c("PCA", "SOM", "SNE", "UMAP"), selected = NULL),
-              selectInput("traitsForPlotting", "Select Traits for Plotting", choices = NULL, multiple = TRUE),
+              uiOutput("traittoplot"),
               actionButton("runAnalysis", "Run Analysis"),
+              
+              ## Custom classification
+              numericInput("numClasses", "Number of Classes", value = 2, min = 2),
+              uiOutput("classBoundariesUI"),  
+              plotOutput("traitDensityPlot"), 
               plotOutput("analysisPlot"),
               actionButton("createClass", "Create Class from Trait"),
               DTOutput("newClassTable")
@@ -173,7 +176,7 @@ server <- function(input, output, session) {
       selectInput("location", "Location", choices = c("-","Annoceur","Beja","Beni-Mellal","Chebika",
                                                       "Ciudad Obregón","Douyet","El Kef", "Jemâa-Shaim","Melk Zher" ,
                                                       "Merchouch","Oued Mliz","Sidi el Aïdi","Tassaout","Terbol"),
-                                                      multiple = TRUE, selected = NULL )#c("Merchouch", "Annoceur", "Beni-Mellal", "Sidi el Aïdi","Tassaout"))
+                                                      multiple = TRUE, selected = NULL)
     })
   
   })
@@ -188,8 +191,8 @@ server <- function(input, output, session) {
   observeEvent(input$fetchData, {
     req(input$qualityLab)  # Ensure that a quality lab is selected
     withProgress(message = 'Fetching NIR Data...', value = 0, {
-      for (i in 1:30) {
-        incProgress(1/30)
+      for (i in 1:45) {
+        incProgress(1/45)
         Sys.sleep(0.1)  # Simulated delay for fetching data
       }
       # Assume getNIRData returns a dataframe
@@ -203,8 +206,8 @@ server <- function(input, output, session) {
   observeEvent(input$fetchData, {
     req(input$qualityLab)
     withProgress(message = 'Fetching Trait Data...', value = 0, {
-      for (i in 1:30) {
-        incProgress(1/30)
+      for (i in 1:45) {
+        incProgress(1/45)
         Sys.sleep(0.1)
       }
       # Assume getTraitsData returns a dataframe
@@ -224,7 +227,6 @@ server <- function(input, output, session) {
       computeDataQuality(data)
     }
   })
-
   
   # Compute quality metrics TraitsData 
   qualityMetricsTrait <- reactive({
@@ -276,13 +278,13 @@ server <- function(input, output, session) {
   # Example for NIR Data Quality Metrics
   output$dataQualityTableNIR <- renderDataTable({
     req(nirData())  # Ensure nirData is available before proceeding
-    computeDataQuality(nirData())
+    computeDataQuality(nirData()[,-c(1:17)])
   })
   
   # Example for Trait Data Quality Metrics
   output$dataQualityTableTrait <- renderDataTable({
     req(traitData())  # Ensure traitData is available before proceeding
-    computeDataQuality(traitData())
+    computeDataQuality(traitData()[,-c(1:17)])
   })
   
   # function to compute column stats
@@ -359,94 +361,146 @@ server <- function(input, output, session) {
   })
   
   
-  # Preprocessing
+  ## Preprocessing
   
   preprocessedData <- reactiveVal()
-  
   ## Selected Trait
   output$Selectedtrait <- renderUI({
-    selectInput("trait", "Trait to model",choices =colnames(traitData())[18:46], 
+    selectInput("trait", "Trait to model",choices =colnames(traitData())[18:46],
                 selected = "Protein")
-    })
-
-  ## Selected Methods
-  
-  # Update to handle a single preprocessing method selection and apply it
-  observeEvent(input$runPreprocessing, {
-    req(nirData(), traitData(), input$preprocessingMethod)
-    
-    # Generate Train_test_data by combining nirData and traitData
-    Train_test_data <- nirData() %>%
-      left_join(traitData(), by = "QualityLabPlotNumber") %>%
-      # Keep the trait and all numeric columns before filtering
-      select(all_of(input$trait), everything()) %>%
-      filter(!is.na(.[[input$trait]]))
-    
-    # Use an indexing vector to specifically select columns that are numeric and have numeric names,
-    # which are assumed to represent wavelengths
-    wavelength_columns <- grep("^[0-9]+$", names(Train_test_data), value = TRUE)
-    
-    # Ensure the trait column is included along with wavelength columns
-    selectedColumns <- c(input$trait, wavelength_columns)
-    Train_test_data <- Train_test_data %>%
-      select(all_of(selectedColumns))
-    
-    # Store original data in preprocessedData for reference
-    dataList <- list("Original" = Train_test_data)
-    
-    
-    # Apply the selected preprocessing method
-    dataList[[input$preprocessingMethod]] <- switch(input$preprocessingMethod,
-                            "SNV" = prep.snv(Train_test_data[,-1]),
-                            "MSC" = prep.msc(as.matrix(Train_test_data[,-1])),
-                            "SVG" = prep.savgol(Train_test_data[,-1], width = 15, porder = 3),
-                            "SVG 1stD" = prep.savgol(Train_test_data[,-1], width = 15, porder = 3, dorder = 1),
-                            "SVG 2ndD" = prep.savgol(Train_test_data[,-1], width = 15, porder = 3, dorder = 2),
-                          #  "scale" = prep.autoscale(Train_test_data[,-1], center = FALSE, scale = TRUE),
-                          #  "center" = prep.autoscale(Train_test_data[,-1], center = TRUE, scale = FALSE),
-                          #  "scale_mean_center" = prep.autoscale(Train_test_data[,-1], center = TRUE, scale = TRUE),
-                          #  "Area_Normalization" = prep.norm(Train_test_data[,-1], "area"),
-                          #  "Length_Normalization" = prep.norm(Train_test_data[,-1], "length"),
-                          Train_test_data[,-1]
-    )
-    
-    # Store the processed data, including the method name as key for reference
-    preprocessedData(dataList)
   })
   
+  ## Selected Methods
+  # Update to handle a single preprocessing method selection and apply it
+
+  observeEvent(input$runPreprocessing, {
+    req(nirData(), traitData(), input$preprocessingMethod)
+    # Combine nirData and traitData
+    
+    Train_test_data <- nirData() %>%
+    left_join(traitData(), by = "QualityLabPlotNumber")
+    # Combine nirData and traitData
+
+    Train_test_data <- Train_test_data %>%
+    filter(!is.na(.[[input$trait]])) %>%
+    select(all_of(input$trait), grep("^[0-9]+$", names(.), value = TRUE))  # Select trait and wavelength columns
+
+    # Initialize dataList with original data for reference
+    
+    dataList <- list("Original" = Train_test_data[,-1] )
+    # Apply the selected preprocessing method and update dataList
+    dataList[[input$preprocessingMethod]] <- switch(input$preprocessingMethod,
+                                                    "SNV" = prep.snv(as.matrix(Train_test_data[,-1])),
+                                                    "MSC" = prep.msc(as.matrix(Train_test_data[,-1])),
+                                                    "SVG" = prep.savgol(Train_test_data[,-1], width = 21, porder =3, dorder = 0),
+                                                    "SVG 1stD" = prep.savgol(Train_test_data[,-1], width = 21, porder = 3, dorder = 1),
+                                                    "SVG 2nD" = prep.savgol(Train_test_data[,-1], width = 21, porder = 3, dorder = 2),
+                                                    "Area_Normalization" = prep.norm(Train_test_data[,-1], "area"),
+                                                    "Length_Normalization" = prep.norm(Train_test_data[,-1], "length"),
+                                                    default = Train_test_data[,-1]
+    )
+    
+    # Store the processed data
+    preprocessedData(dataList)
+  })
   # Plot for Original Data
   output$originalDataPlot <- renderPlot({
     req(preprocessedData()["Original"])
     
-    # Assuming mdaplot can plot matrices or data frames directly
     originalData <- preprocessedData()[["Original"]]
-    
-    mdaplot(originalData[,-1], type = "l", main = "Original NIR Data")
+    mdaplot(originalData, type = "l", main = "Original NIR Data")
   })
   
   # Plot for Preprocessed Data
   output$preprocessedPlots <- renderPlot({
-    req(preprocessedData(), input$preprocessingMethod)
-    
-    # Access the preprocessed data using the method selected by the user
+    req(preprocessedData(), input$preprocessingMethod, input$runPreprocessing)
     processed <- preprocessedData()[[input$preprocessingMethod]]
-    
-    # Check if processed data exists and is not just the original data
-    if(!is.null(processed) && input$preprocessingMethod != "Original") {
-      mdaplot(processed, main = paste("Preprocessed Data - Method:", input$preprocessingMethod))
+    if (!is.null(processed)) {
+      mdaplot(processed,type = "l", 
+              main = paste("Preprocessed Data - Method:", input$preprocessingMethod))
     } else {
-      # Fallback to original data plot if no preprocessing method is applied
+      # Fallback to original data plot if no preprocessing method is applied or data is not ready
       originalData <- preprocessedData()[["Original"]]
-      
-      mdaplot(originalData[,-1], type = "l", main = "Original NIR Data")
+      if (is.null(originalData)) {
+        return(NULL)  # Handle the case where even original data is not available
+        }
+      mdaplot(originalData, type = "l", main = "Original NIR Data")
     }
+
   })
   
+  
   # Data Analysis
-  output$analysisPlot <- renderPlot({
-    req(input$analysisColumn)
-    # Create plots based on selected column...
+  
+  ## Trait selection UI update based on available traits
+  output$traittoplot <- renderUI({
+    req(traitData())  
+    selectInput("traittoplot", "Select Trait for Plotting", 
+                choices = colnames(traitData())[18:46],  
+                multiple = FALSE)
   })
+  
+  # Load and prepare the data when a new analysis is requested
+  observeEvent(input$runAnalysis, {
+    req(input$multivariateAnalysis, preprocessedData())  # Make sure preprocessing is done
+    
+    # Get preprocessed nirs and traits
+    preprocessedNIRS <- preprocessedData()[[input$preprocessingMethod]]
+    selectedTraitData <- traitData()[[input$traittoplot]]  # Access the selected trait data from the traitData reactive source
+    
+    # Depending on the selected multivariate analysis method
+    analysisResults <- switch(input$multivariateAnalysis,
+                              "PCA" = mdatools::pca(preprocessedNIRS, scale = TRUE),
+                              # Add other analysis methods 
+                              default = mdatools::pca(preprocessedNIRS, scale = FALSE)
+    )
+    
+    # Ensure analysis results are available
+    req(analysisResults)
+    
+    # Store the PCA model results for use in plotting
+    output$analysisPlot <- renderPlot({
+      if (!is.null(analysisResults$model) && input$multivariateAnalysis == "PCA") {
+        pcaModel <- analysisResults[[input$multivariateAnalysis]]
+        # Plotting the scores from PCA
+        mdatools::plotScores(pcaModel, main = "PCA Score Plot")
+      }
+    })
+  })
+  
+  # Create classes from the selected trait
+  observeEvent(input$createClass, {
+    req(input$selectedTrait)  # Ensure a trait is selected
+    traitData <- Train_test_data[,1]  # Extract the trait data from preprocessed dataset
+    
+    # Display the density plot for the selected trait
+    output$traitDensityPlot <- renderPlot({
+      plot(density(traitData), main = paste("Density of", input$selectedTrait,
+                                            xlab = input$selectedTrait)
+      )
+    })
+    
+    # Modal dialog for defining class limits
+    showModal(modalDialog(
+      title = "Define Class Boundaries",
+      textInput("classBoundaries", "Enter Class Boundaries (comma separated)"),
+      actionButton("confirmClasses", "Confirm"),
+      easyClose = TRUE,
+      footer = NULL
+    ))
+    
+    # Process user-defined class limits and create trait classes
+    observeEvent(input$confirmClasses, {
+      boundaries <- as.numeric(unlist(strsplit(input$classBoundaries, ",")))
+      newClass <- cut(traitData, breaks = c(-Inf, sort(boundaries), Inf))
+      output$newClassTable <- renderDT({
+        data.frame(Trait = traitData, Class = newClass)
+      })
+      removeModal()  # Close the dialog after confirmation
+    })
+  })
+  
+  
   
   # Modeling
   observeEvent(input$runModel, {
