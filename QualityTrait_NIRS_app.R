@@ -13,7 +13,7 @@ base::source("/Volumes/Macintosh HD — Data/Desktop/FIGS/icardaFIGSr/nir_api.R"
 
 
 ui <- dashboardPage(
-  dashboardHeader(title = "NIRS-Traits Data Analysis", titleWidth = 300),
+  dashboardHeader(title = "TraitWave Analytics", titleWidth = 300),
   dashboardSidebar(
     sidebarMenu(
       menuItem("Data Quality", tabName = "dataQuality", icon = icon("dashboard")),
@@ -46,49 +46,49 @@ ui <- dashboardPage(
                     column(3, actionButton("fetchData", "Fetch Data", class = "btn-primary", 
                                            icon = icon("download")))
                   )
-                ),
+              ),
               # Data quality metrics and column wise statistics for NIRS
               box(title = "NIRS Data", status = "success", solidHeader = TRUE,
                   width = 12, collapsible = T,
                   tabBox(width = 12,
-                    tabPanel("Data Quality Metrics", DTOutput("dataQualityTableNIR")), 
-                    tabPanel("Column wise stats", DTOutput("nirDataColumnStatsTable"))
+                         tabPanel("Data Quality Metrics", DTOutput("dataQualityTableNIR")), 
+                         tabPanel("Column wise stats", DTOutput("nirDataColumnStatsTable"))
                   )
               ),
               # Data quality metrics and column wise statistics for Trait
               box(title = "Quality traits Data", status = "success", solidHeader = TRUE,
                   width = 12, collapsible = T,
                   tabBox(width = 12,
-                    tabPanel("Data Quality Metrics", DTOutput("dataQualityTableTrait")), 
-                    tabPanel("Column wise stats", DTOutput("traitDataColumnStatsTable"))
+                         tabPanel("Data Quality Metrics", DTOutput("dataQualityTableTrait")), 
+                         tabPanel("Column wise stats", DTOutput("traitDataColumnStatsTable"))
                   )
-
+                  
               )
       ),
-
+      
       # Preprocessing Tab
       tabItem(tabName = "preprocessing",
-            box(title = "preprocessing parameters", status = "primary", solidHeader = TRUE, 
-                width = 12, collapsible = T,
-                fluidRow(
-                  column(4,uiOutput("Selectedtrait")),
-                  column(4,selectInput("preprocessingMethod", "Select Preprocessing Method",
-                                       choices = c("SNV",# = "Standard Normal Variate",
-                                                   "MSC",# = "Multiplicative Scatter Correction",
-                                                   "SVG",# = "Savitski-golay smoothing",
-                                                   "SVG 1stD",# = "Savitski-golay smoothing and 1st derivative",
-                                                   "SVG 2nD" ,#= "Savitski-golay smoothing and 2nd derivative",
-                                                   "Length_Normalization",
-                                                   "Area_Normalization"),
-                                       selected = "SNV")
-                         ),
-                  column(4,actionButton("runPreprocessing", "Run Preprocessing",
-                                        class = "btn-primary", 
-                                        icon=icon("tools"))
+              box(title = "preprocessing parameters", status = "primary", solidHeader = TRUE, 
+                  width = 12, collapsible = T,
+                  fluidRow(
+                    column(4,uiOutput("Selectedtrait")),
+                    column(4,selectInput("preprocessingMethod", "Select Preprocessing Method",
+                                         choices = c("SNV",# = "Standard Normal Variate",
+                                                     "MSC",# = "Multiplicative Scatter Correction",
+                                                     "SVG",# = "Savitski-golay smoothing",
+                                                     "SVG 1stD",# = "Savitski-golay smoothing and 1st derivative",
+                                                     "SVG 2nD" ,#= "Savitski-golay smoothing and 2nd derivative",
+                                                     "Length_Normalization",
+                                                     "Area_Normalization"),
+                                         selected = "SNV")
+                    ),
+                    column(4,actionButton("runPreprocessing", "Run Preprocessing",
+                                          class = "btn-primary", 
+                                          icon=icon("tools"))
+                    )
                   )
-                )
               ),
-            # 
+              # 
               fluidRow(
                 box(title = "Original Data", plotOutput("originalDataPlot"), width = 6, 
                     status = "success", solidHeader=T, collapsible=T),
@@ -104,27 +104,27 @@ ui <- dashboardPage(
                   width= 12 , collapsible = T, 
                   fluidRow(
                     column(4,selectInput("multivariateAnalysis", "Select Multivariate Analysis Method",
-                              choices = c("PCA", "SOM", "SNE", "UMAP"), selected = "PCA")), 
+                                         choices = c("PCA", "SOM", "SNE", "UMAP"), selected = "PCA")), 
                     column(4, uiOutput("traittoplot")),
                     column(4, actionButton("runAnalysis", "Run Analysis",
                                            class = "btn-primary", 
                                            icon=icon("play")))
                   )
-                ),
-                  
+              ),
+              
               # Create trait classes from numeric values
               box(title = "Custom classification parameters", status = "primary", solidHeader = T, 
                   width = 12, collapsible = T,
                   # Class creation parameters
                   fluidRow(
                     column(3, sliderInput("numClasses", "Number of Classes",
-                                           value = 2, min = 2, max = 5, step=1)),
+                                          value = 2, min = 2, max = 5, step=1)),
                     column(6,uiOutput("classInputsUI")), 
                     column(3, actionButton("createClasses", "Create Classes",
-                                          class = "btn-primary", 
-                                          icon=icon("plus-square")))
+                                           class = "btn-primary", 
+                                           icon=icon("plus-square")))
                   )
-                ), 
+              ), 
               
               # Show analysis results   
               box(title = "Analysis Results", status = "success", solidHeader = T,
@@ -141,9 +141,9 @@ ui <- dashboardPage(
                                     column(6, plotOutput("DensityPlot")))),
                          tabPanel("Trait and classes", DTOutput("TraitClasses")),
                          tabPanel("Traits Meta data" ,DTOutput("TraitMetaData"))
-                         )
-                )
-              ),
+                  )
+              )
+      ),
       
       # Modeling/evaluation Tab
       tabItem(tabName = "modeling",
@@ -154,8 +154,8 @@ ui <- dashboardPage(
                   fluidRow(
                     # Task Type Selection
                     column(3,radioButtons("taskType", "Select Task Type",
-                                 choices = list("Classification" = "classification",
-                                                "Regression" = "regression"))),
+                                          choices = list("Classification" = "classification",
+                                                         "Regression" = "regression"))),
                     # Dynamic UI for Model Selection based on Task Type
                     column(3,uiOutput("modelSelection")),
                     # Dynamic UI for specifying intervals length for IPLS
@@ -164,20 +164,24 @@ ui <- dashboardPage(
                     column(3,actionButton("runModel", "Run Modeling Task",
                                           icon = icon("rocket"),
                                           class = "btn-primary"))
-                    )
-                  ),
+                  )
+              ),
               
               # Output Containers for Model Summary and Plots
               box(title = "Model summaries",status = "success",solidHeader = TRUE,
-                collapsible = TRUE,width = 12,
-                # Model summary outputs
-                tabBox(width = 12,
-                    tabPanel("Model Summary", DTOutput("modelSummary")),
-                    tabPanel("Model Plots", plotOutput("modelPlots"))
-                      )
-                 )
-              ),
-     
+                  collapsible = TRUE,width = 12,
+                  # Model summary outputs
+                  tabBox(width = 12,
+                         tabPanel("Model Summary", textOutput("modelSummary")),
+                         tabPanel("Model diagnosis", plotOutput("modelPlots")), 
+                         tabPanel("Coeffecients", plotOutput("modelCoefPlot")), 
+                         tabPanel("Selectivity Ratio", plotOutput("modelSelRatioPlot")), 
+                         tabPanel("Performance Metrics", plotOutput("modelPerfMetrPlot"))
+                         
+                  )
+              )
+      ),
+      
       # Make Predictions Tab
       tabItem(tabName = "makePrediction",
               # Prediction Parameters Inputs
@@ -200,20 +204,20 @@ ui <- dashboardPage(
                   actionButton("runPrediction", "Run Prediction", icon = icon("rocket"), class = "btn-success")
               ),
               
-                 # Prediction Results
+              # Prediction Results
               box(title = "Prediction Results", status = "success",
                   solidHeader = TRUE, collapsible = TRUE, width = 12,
                   # Show prediction results
-                   DTOutput("predictionTable"), 
-                ), 
+                  DTOutput("predictionTable"), 
+              ), 
               box(width = 12, solidHeader = TRUE, status = "success", collapsible = TRUE,
                   # Download Predictions Button
                   downloadButton("downloadPredictions", "Download Predictions", class = "btn-success")
               ),
       )
       
+    )
   )
- )
 )
 
 
@@ -257,9 +261,9 @@ server <- function(input, output, session) {
       selectInput("location", "Location", choices = c("-","Annoceur","Beja","Beni-Mellal","Chebika",
                                                       "Ciudad Obregón","Douyet","El Kef", "Jemâa-Shaim","Melk Zher" ,
                                                       "Merchouch","Oued Mliz","Sidi el Aïdi","Tassaout","Terbol"),
-                                                      multiple = TRUE, selected = NULL)
+                  multiple = TRUE, selected = NULL)
     })
-  
+    
   })
   
   
@@ -421,12 +425,12 @@ server <- function(input, output, session) {
   # Output for NIR Data Column Stats
   output$nirDataColumnStatsTable <- renderDataTable({
     datatable(
-    nirDataColumnStats(), 
-    extensions = 'Buttons',
-    options = list(
-      dom = 'Bfrtip',
-      buttons = c('copy', 'csv', 'excel', 'pdf', 'print')
-    ))
+      nirDataColumnStats(), 
+      extensions = 'Buttons',
+      options = list(
+        dom = 'Bfrtip',
+        buttons = c('copy', 'csv', 'excel', 'pdf', 'print')
+      ))
   })
   
   # Reactive expression for Trait Data
@@ -438,12 +442,12 @@ server <- function(input, output, session) {
   # Output for trait Data Column Stats
   output$traitDataColumnStatsTable <- renderDataTable({
     datatable(
-    traitDataColumnStats(), 
-    extensions = 'Buttons',
-    options = list(
-      dom = 'Bfrtip',
-      buttons = c('copy', 'csv', 'excel', 'pdf', 'print')
-    ))
+      traitDataColumnStats(), 
+      extensions = 'Buttons',
+      options = list(
+        dom = 'Bfrtip',
+        buttons = c('copy', 'csv', 'excel', 'pdf', 'print')
+      ))
   })
   
   
@@ -481,14 +485,21 @@ server <- function(input, output, session) {
   # Update to handle a single preprocessing method selection and apply it
   observeEvent(input$runPreprocessing, {
     req(nirData(), traitData(), input$preprocessingMethod)
+    
+    withProgress(message = 'Preparing Plots...', value = 0, {
+      for (k in 1:10) {
+        incProgress(1/10)
+        Sys.sleep(0.1)  # Simulated delay for fetching data
+      }
+      
     # Combine nirData and traitData
     Train_test_data <- nirData() %>%
-    left_join(traitData(), by = "QualityLabPlotNumber")
-
+      left_join(traitData(), by = "QualityLabPlotNumber")
+    
     Train_test_data <- Train_test_data %>%
-    filter(!is.na(.[[input$trait]])) %>%
-    select(all_of(input$trait), grep("^[0-9]+$", names(.), value = TRUE))  # Select trait and wavelength columns
-
+      filter(!is.na(.[[input$trait]])) %>%
+      select(all_of(input$trait), grep("^[0-9]+$", names(.), value = TRUE))  # Select trait and wavelength columns
+    
     # Initialize dataList with original data for reference
     dataList <- list("Original" = Train_test_data[,-1] )
     
@@ -496,21 +507,22 @@ server <- function(input, output, session) {
     dataList[[input$preprocessingMethod]] <- switch(input$preprocessingMethod,
                                                     "SNV" = prep.snv(as.matrix(Train_test_data[,-1])),
                                                     "MSC" = prep.msc(as.matrix(Train_test_data[,-1])),
-                                                    "SVG" = prep.savgol(Train_test_data[,-1], width = 21, porder =3, dorder = 0),
-                                                    "SVG 1stD" = prep.savgol(Train_test_data[,-1], width = 21, porder = 3, dorder = 1),
-                                                    "SVG 2nD" = prep.savgol(Train_test_data[,-1], width = 21, porder = 3, dorder = 2),
+                                                    "SVG" = prep.savgol(Train_test_data[,-1], width = 15, porder =3, dorder = 0),
+                                                    "SVG 1stD" = prep.savgol(Train_test_data[,-1], width = 15, porder = 3, dorder = 1),
+                                                    "SVG 2nD" = prep.savgol(Train_test_data[,-1], width = 15, porder = 3, dorder = 2),
                                                     "Area_Normalization" = prep.norm(Train_test_data[,-1], "area"),
                                                     "Length_Normalization" = prep.norm(Train_test_data[,-1], "length"),
                                                     default = Train_test_data[,-1]
-                                                    )
+    )
     # Store the processed data
     preprocessedData(dataList)
+    })
   })
   
   # Plot for Original Data
   output$originalDataPlot <- renderPlot({
     req(preprocessedData()["Original"])
-
+    
     originalData <- preprocessedData()[["Original"]]
     
     # Set data attributes for plotting
@@ -523,32 +535,6 @@ server <- function(input, output, session) {
   })
   
   # Plot Preprocessed NIR Data
-  # output$preprocessedPlots <- renderPlot({
-  #   req(preprocessedData(), input$preprocessingMethod, input$runPreprocessing)
-  #   
-  #   processed <- preprocessedData()[[input$preprocessingMethod]]
-  #   
-  #   attr(processed, "name") = "Wavelengths (nm)"
-  #   
-  #   attr(processed, "xaxis.name") = "Wavelengths (nm)"
-  #   attr(processed, "xaxis.values") = colnames(processed)%>%integer()
-  #   
-  #   if (!is.null(processed)) {
-  #     mdaplot(processed,type = "l", 
-  #             main = paste("Preprocessed Data - Method:", input$preprocessingMethod))
-  #   } else {
-  #     # Fallback to original data plot if no preprocessing method is applied or data is not ready
-  #     originalData <- preprocessedData()[["Original"]]
-  #     
-  #     mdaplot(originalData, type = "l", main = "Original NIR Data")
-  #     
-  #     if (is.null(originalData)) {
-  #      return(NULL)  # Handle the case where even original data is not available
-  #     }
-  #     mdaplot(originalData, type = "l", main = "Original NIR Data")
-  #   }
-  # })
-  
   output$preprocessedPlots <- renderPlot({
     req(preprocessedData())
     
@@ -584,7 +570,7 @@ server <- function(input, output, session) {
   
   
   ### Data Analysis
-
+  
   # Trait selection UI 
   output$traittoplot <- renderUI({
     req(traitData())
@@ -598,27 +584,37 @@ server <- function(input, output, session) {
   observeEvent(input$runAnalysis, {
     req(input$multivariateAnalysis, input$traittoplot,traitData(), nirData())
     
-    # Combine preprocessed NIRS and Trait data
-    combinedData <-  nirData() %>%
-      left_join(traitData(), by = "QualityLabPlotNumber")%>%
-      filter(!is.na(.[[input$traittoplot]])) %>%
-      select(all_of(input$traittoplot), grep("^[0-9]+$", names(.), value = TRUE))  # Select trait and wavelength columns
+    withProgress(message = 'Traning Model...', value = 0, {
+      for (k in 1:5) {
+        incProgress(1/5)
+        Sys.sleep(0.1)  # Simulated delay for fetching data
+      }
+      
+      # Combine preprocessed NIRS and Trait data
+      combinedData <-  nirData() %>%
+        left_join(traitData(), by = "QualityLabPlotNumber")%>%
+        filter(!is.na(.[[input$traittoplot]])) %>%
+        select(all_of(input$traittoplot), grep("^[0-9]+$", names(.), value = TRUE))  # Select trait and wavelength columns
+      
+      # Data partitioning
+      set.seed(123) # For reproducibility
+      trainIndex <- sample(nrow(combinedData), nrow(combinedData) * 0.75)
+      
+      Xc <- combinedData[trainIndex, -1] # Calibration predictors
+      yc <- combinedData[trainIndex, 1]  # Calibration response
+      
+      Xt <- combinedData[-trainIndex, -1] # Test predictors
+      yt <- combinedData[-trainIndex, 1]  # Test response
+      
+      # Fit PCA model
+      modelPCA <- mdatools::pca(Xc ,x.test = Xt, scale = FALSE, ncomp = 7)
+      
+      # Store PCA model, trainIndex, and traitData for plotting
+      analysisResults(list(model = modelPCA, trainIndex = trainIndex,
+                           traitData = combinedData[, 1], NIRData = combinedData[,-1]))
+      
+    })
     
-    # Data partitioning
-    set.seed(123) # For reproducibility
-    trainIndex <- sample(nrow(combinedData), nrow(combinedData) * 0.75)
-    
-    Xc <- combinedData[trainIndex, -1] # Calibration predictors
-    yc <- combinedData[trainIndex, 1]  # Calibration response
-    
-    Xt <- combinedData[-trainIndex, -1] # Test predictors
-    yt <- combinedData[-trainIndex, 1]  # Test response
-    
-    # Fit PCA model
-    modelPCA <- mdatools::pca(Xc ,x.test = Xt, scale = TRUE, ncomp = 7)
-    
-    # Store PCA model, trainIndex, and traitData for plotting
-    analysisResults(list(model = modelPCA, trainIndex = trainIndex, traitData = combinedData[, 1]))
   })
   
   # PCA Scores with Selected Trait
@@ -627,12 +623,11 @@ server <- function(input, output, session) {
     
     results <- analysisResults() 
     
-      traitValuesForCalibration <- results$traitData[results$trainIndex, input$traittoplot]
-
-       plotScores(results$model, show.labels = FALSE,
-                   main = paste("PCA Scores Colored by", input$traittoplot))
+    traitValuesForCalibration <- results$traitData[results$trainIndex,input$traittoplot]
+    
+    plotScores(results$model, show.labels = FALSE,
+               main = paste("PCA Scores Colored by", input$traittoplot))
   })
-
   
   # Plot for PCA Loadings
   output$Loadings <- renderPlot({
@@ -684,7 +679,7 @@ server <- function(input, output, session) {
   output$classInputsUI <- renderUI({
     req(traitData(),input$traittoplot)
     
-  # Make sure traitData is available
+    # Make sure traitData is available
     numClasses <- input$numClasses
     selectedTrait <- input$traittoplot 
     
@@ -699,9 +694,9 @@ server <- function(input, output, session) {
                            label = paste("Limits for Class", i),
                            min = floor(traitMin), max = round(traitMax, 2),
                            value = round(quantile(traitData()[[input$traittoplot]],
-                                            probs = c((i-1)/numClasses, i/numClasses),
-                                            na.rm = TRUE, names = FALSE), 2))
-               )
+                                                  probs = c((i-1)/numClasses, i/numClasses),
+                                                  na.rm = TRUE, names = FALSE), 2))
+        )
       }),
       lapply(1:numClasses, function(i) {
         column(6,
@@ -731,6 +726,7 @@ server <- function(input, output, session) {
       
       withinLimits <- dataForPlotting$TraitValue >= classLimits[1] & dataForPlotting$TraitValue <= classLimits[2]
       dataForPlotting$Class[withinLimits] <- className
+      dataForPlotting <- dataForPlotting%>% filter(!is.na(TraitValue))
     }
     
     # Store the modified data for further processing
@@ -740,7 +736,7 @@ server <- function(input, output, session) {
     output$DensityPlot <- renderPlot({
       req(classData()) 
       
-      cleanDataForPlotting <- classData() %>% filter(!is.na(TraitValue))
+      cleanDataForPlotting <- classData() #%>% filter(!is.na(TraitValue))
       
       # Generate the plot
       p <- ggplot(cleanDataForPlotting, aes(x = TraitValue, group=Class, fill = Class)) +
@@ -752,8 +748,6 @@ server <- function(input, output, session) {
       p 
     })
   })
-  
-  
   
   ## Show trait values and classes
   output$TraitClasses <- renderDataTable({
@@ -770,17 +764,17 @@ server <- function(input, output, session) {
   
   ### Modeling and evaluation
   
+  # UI for selecting model type based on the task
   output$modelSelection <- renderUI({
     if(input$taskType == "regression") {
-      selectInput("modelType", "Select Model", choices = c("PLS", "IPLS"))
+      selectInput("modelType", "Select Model", choices = c("PCA","PLS", "IPLS"))
     } else if(input$taskType == "classification") {
       selectInput("modelType", "Select Model", choices = c("PLS-DA", "SIMCA"))
     }
   })
   
-  # IPLS Interval Length Input
+  # UI for specifying interval length in IPLS (only relevant for IPLS)
   output$intervalLength <- renderUI({
-
     if(input$modelType == "IPLS") {
       numericInput("intervalLength", "Interval Length", value = 10, min = 1, max = 100)
     } else {
@@ -788,40 +782,97 @@ server <- function(input, output, session) {
     }
   })
   
+  # Reactive storage for model results
+  ModelResult <- reactiveVal(NULL)
+  
   # Run Modeling Task
   observeEvent(input$runModel, {
-    req(input$modelType, preprocessedData(), classData())
+    req(input$modelType, preprocessedData(), input$taskType, classData())
     
-    # Model fitting logic based on selected model type
-    fitModel <- switch(input$modelType,
-                       "PLS" = {
-                         # PLS model fitting code here
-                       },
-                       "IPLS" = {
-                         # IPLS model fitting code here, make sure to use input$intervalLength
-                       },
-                       
-                       "PLS-DA" = {
-                         # PLS-DA model fitting code here
-                       },
-                       
-                       "SIMCA" = {
-                         # SIMCA model fitting code here
-                       }
-    )
-    
-    # FitModel will contain the fitted model and its results
-    
-    # Model Summary Output
-    output$modelSummary <- renderDT({
-      # Convert model summary to a data table
-    })
-    
-    # Model Plots Output
-    output$modelPlots <- renderPlot({
-      # Plotting logic based on fitModel
+    withProgress(message = 'Training Model...', value = 0, {
+      for (k in 1:5) {
+        incProgress(1/5)
+        # Sys.sleep(0.1)  # Simulated delay for fetching data
+      }
+      
+      # Filter class data based on the task type
+      responseColumn <- if (input$taskType == "regression") {
+        "TraitValue"  # Column for regression
+      } else {
+        "Class"  # Column for classification
+      }
+      
+      # Combine preprocessed NIRS and filtered Class data
+      combinedData <- cbind(classData()[, c(responseColumn, "Class")], preprocessedData())
+      
+      # Data partitioning
+      set.seed(123)  # For reproducibility
+      trainIndex <- sample(nrow(combinedData), size = floor(0.75 * nrow(combinedData)))
+      
+      Xc <- combinedData[trainIndex, -c(1,2)]  # Calibration predictors
+      yc <- combinedData[trainIndex, 1]   # Calibration response
+      Xt <- combinedData[-trainIndex, -c(1,2)] # Test predictors
+      yt <- combinedData[-trainIndex, 1]  # Test response
+      
+      # Model fitting logic based on selected model type
+      fittedModel <- switch(input$modelType,
+                            "PLS" = pls(Xc, yc, x.test =Xt, y.test = yt,  ncomp = 5, scale = F),
+                            "IPLS" = ipls(Xc, yc, x.test =Xt, y.test = yt, 
+                                          glob.ncomp = 5, int.num = input$intervalLength),
+                            "PLS-DA" = plsda(Xc, yc, x.test =Xt, ncomp = 5, scale = F),
+                            "SIMCA" = simca(Xc, yc,x.test =Xt, y.test = yt, ncomp = 5, scale = F),
+                            pca(Xc, x.test =Xt, ncomp = 5)  # Default fallback method
+      )
+      ModelResult(list(Model = fittedModel))  #Store the model result
     })
   })
+  
+  # output Model summary
+  output$modelSummary <- renderPrint({
+    req(ModelResult())
+    print(ModelResult()$Model)
+  })
+  
+  # output model diagnosis plots
+  output$modelPlots <- renderPlot({
+    req(analysisResults())
+    
+    if (input$modelType %in% c("PLS", "PLS-DA")) {
+      plot(ModelResult()$Model, comps = 1:2)
+    } else if (input$modeltype == "SIMCA") {
+      plot(ModelResult()$Model)
+    }
+  })
+  
+  ## output model evaluation Metrics
+  
+  # Coefficients 
+  output$modelCoefPlot <- renderPlot({
+    req(analysisResults(), ModelResult())
+    
+    plotRegcoeffs(ModelResult()$Model, type="h", show.ci=T, show.labels=F)
+    plotRegcoeffs(ModelResult()$Model, type="l", show.ci=T, show.labels=F)
+  })  
+  
+  
+  # Selectivity Ratio
+  output$modelSelRatioPlot <- renderPlot({
+    req(analysisResults(), ModelResult())
+    
+    plotVIPScores(ModelResult()$Model, ncomp = 5, type = "h", show.labels = F)
+    plotSelectivityRatio(ModelResult()$Model, ncomp = 5, type = "h", show.labels = F)
+    
+  })  
+  
+  # Performance
+  output$modelPerfMetrPlot <- renderPlot({
+    req(ModelResult())
+    
+    plotPredictions(ModelResult()$Model, ncomp = 5, show.labels = F)
+    plotRMSE(ModelResult()$Model, ncomp = 5)
+    
+  })  
+  
 }
 
 # Run the application
