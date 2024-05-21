@@ -1,19 +1,19 @@
 library(shiny)
 library(shinydashboard)
-library(DT)
-library(ggplot2)
-library(icardaFIGSr)
-library(dplyr)
 library(shinyWidgets)
 library(shinyjs)
+library(icardaFIGSr)
+library(DT)
+library(ggplot2)
+library(dplyr)
 library(mdatools)
-
+library(caret)
 
 base::source("/Volumes/Macintosh HD — Data/Desktop/FIGS/icardaFIGSr/nir_api.R")
 
 
 ui <- dashboardPage(
-  dashboardHeader(title = "TraitWave Analytics", titleWidth = 300),
+  dashboardHeader(title = "TraitNIRSpectra Analytics", titleWidth = 300),
   dashboardSidebar(
     sidebarMenu(
       menuItem("Data Quality", tabName = "dataQuality", icon = icon("dashboard")),
@@ -767,11 +767,12 @@ server <- function(input, output, session) {
   # UI for selecting model type based on the task
   output$modelSelection <- renderUI({
     if(input$taskType == "regression") {
-      selectInput("modelType", "Select Model", choices = c("PCA","PLS", "IPLS"))
+      selectInput("modelType", "Select Model", choices = c("PCA", "PLS", "IPLS", "RF", "SVM", "KNN"))
     } else if(input$taskType == "classification") {
-      selectInput("modelType", "Select Model", choices = c("PLS-DA", "SIMCA"))
+      selectInput("modelType", "Select Model", choices = c("PLS-DA", "SIMCA", "RF", "SVM", "KNN"))
     }
   })
+  
   
   # UI for specifying interval length in IPLS (only relevant for IPLS)
   output$intervalLength <- renderUI({
@@ -782,17 +783,16 @@ server <- function(input, output, session) {
     }
   })
   
+  
   # Reactive storage for model results
   ModelResult <- reactiveVal(NULL)
   
-  # Run Modeling Task
   observeEvent(input$runModel, {
     req(input$modelType, preprocessedData(), input$taskType, classData())
     
     withProgress(message = 'Training Model...', value = 0, {
       for (k in 1:5) {
         incProgress(1/5)
-        # Sys.sleep(0.1)  # Simulated delay for fetching data
       }
       
       # Filter class data based on the task type
@@ -803,29 +803,49 @@ server <- function(input, output, session) {
       }
       
       # Combine preprocessed NIRS and filtered Class data
-      combinedData <- cbind(classData()[, c(responseColumn, "Class")], preprocessedData())
+      combinedData <- cbind(classData()[, responseColumn, drop = FALSE], preprocessedData())
+      
+      # Ensure we use only complete cases
+      combinedData <- combinedData[complete.cases(combinedData), ]
+      
+      # Convert outcome to factor for classification tasks
+      if (input$taskType == "classification") {
+        combinedData[[responseColumn]] <- as.factor(combinedData[[responseColumn]])
+      }
       
       # Data partitioning
       set.seed(123)  # For reproducibility
-      trainIndex <- sample(nrow(combinedData), size = floor(0.75 * nrow(combinedData)))
+      trainIndex <- createDataPartition(combinedData[[responseColumn]], p = 0.75, list = FALSE)
       
-      Xc <- combinedData[trainIndex, -c(1,2)]  # Calibration predictors
-      yc <- combinedData[trainIndex, 1]   # Calibration response
-      Xt <- combinedData[-trainIndex, -c(1,2)] # Test predictors
-      yt <- combinedData[-trainIndex, 1]  # Test response
+      trainData <- combinedData[trainIndex, ]
+      testData <- combinedData[-trainIndex, ]
+      
+      # Define trainControl for cross-validation
+      trainControl <- trainControl(method = "cv", number = 5)
+      
+      # Ensure classname in SIMCA has fewer than 20 symbols
+      if (input$modelType == "SIMCA") {
+        trainData$Class <- substr(trainData$Class, 1, 20)
+        testData$Class <- substr(testData$Class, 1, 20)
+      }
       
       # Model fitting logic based on selected model type
       fittedModel <- switch(input$modelType,
-                            "PLS" = pls(Xc, yc, x.test =Xt, y.test = yt,  ncomp = 5, scale = F),
-                            "IPLS" = ipls(Xc, yc, x.test =Xt, y.test = yt, 
+                            "PLS" = pls(trainData[, -1], trainData[[responseColumn]], x.test = testData[, -1], y.test = testData[[responseColumn]], ncomp = 5, scale = TRUE),
+                            "IPLS" = ipls(trainData[, -1], trainData[[responseColumn]], x.test = testData[, -1], y.test = testData[[responseColumn]], 
                                           glob.ncomp = 5, int.num = input$intervalLength),
-                            "PLS-DA" = plsda(Xc, yc, x.test =Xt, ncomp = 5, scale = F),
-                            "SIMCA" = simca(Xc, yc,x.test =Xt, y.test = yt, ncomp = 5, scale = F),
-                            pca(Xc, x.test =Xt, ncomp = 5)  # Default fallback method
+                            "PLS-DA" = plsda(trainData[, -1], trainData[[responseColumn]], x.test = testData[, -1], y.test = testData[[responseColumn]], ncomp = 5, scale = TRUE),
+                            "SIMCA" = simca(trainData[, -1], trainData[[responseColumn]], x.test = testData[, -1], y.test = testData[[responseColumn]], ncomp = 5, scale = TRUE),
+                            "RF" = train(trainData[, -1], trainData[[responseColumn]], method = "rf", trControl = trainControl, tuneLength = 5),
+                            "SVM" = train(trainData[, -1], trainData[[responseColumn]], method = "svmRadial", trControl = trainControl, tuneLength = 5),
+                            "KNN" = train(trainData[, -1], trainData[[responseColumn]], method = "knn", trControl = trainControl, tuneLength = 5),
+                            pca(trainData[, -1], x.test = testData[, -1], ncomp = 5)  # Default fallback method
       )
-      ModelResult(list(Model = fittedModel))  #Store the model result
+      ModelResult(list(Model = fittedModel, TestData = testData, TrainData = trainData, ResponseColumn = responseColumn))  # Store the model result
     })
   })
+  
+  
   
   # output Model summary
   output$modelSummary <- renderPrint({
@@ -833,45 +853,88 @@ server <- function(input, output, session) {
     print(ModelResult()$Model)
   })
   
-  # output model diagnosis plots
+  # Plotting function for model overview
   output$modelPlots <- renderPlot({
-    req(analysisResults())
+    req(ModelResult())
     
-    if (input$modelType %in% c("PLS", "PLS-DA")) {
-      plot(ModelResult()$Model, comps = 1:2)
-    } else if (input$modeltype == "SIMCA") {
-      plot(ModelResult()$Model)
+    model <- ModelResult()$Model
+    
+    if (input$modelType == "PLS-DA" || input$modelType == "PLS") {
+      plot(model, ncomp = model$ncomp.selected, main = paste(input$modelType, "Model"))
+    } else if (input$modelType == "SIMCA") {
+      plotSIMCA(model, main = "SIMCA Model")
+    } else if (input$modelType == "RF") {
+      varImpPlot(model$finalModel)
+    } else if (input$modelType == "SVM" || input$modelType == "KNN") {
+      pred <- predict(model, ModelResult()$TestData[, -1])
+      actual <- ModelResult()$TestData[[ModelResult()$ResponseColumn]]
+      
+      if (input$taskType == "regression") {
+        ggplot() +
+          geom_point(aes(x = actual, y = pred), color = "blue") +
+          geom_abline(slope = 1, intercept = 0, color = "red") +
+          labs(title = paste(input$modelType, "Regression"), x = "Actual", y = "Predicted") +
+          theme_minimal()
+      } else {
+        cm <- confusionMatrix(pred, actual)
+        fourfoldplot(cm$table, color = c("#CC6666", "#99CC99"), conf.level = 0, margin = 1, main = paste(input$modelType, "Confusion Matrix"))
+      }
+    } else {
+      plot(model)
     }
   })
   
-  ## output model evaluation Metrics
-  
-  # Coefficients 
+  # Plotting function for regression coefficients
   output$modelCoefPlot <- renderPlot({
-    req(analysisResults(), ModelResult())
+    req(ModelResult())
     
-    plotRegcoeffs(ModelResult()$Model, type="h", show.ci=T, show.labels=F)
-    plotRegcoeffs(ModelResult()$Model, type="l", show.ci=T, show.labels=F)
-  })  
+    model <- ModelResult()$Model
+    
+    if (input$modelType == "PLS" || input$modelType == "PLS-DA") {
+      plotRegcoeffs(model, ncomp = model$ncomp.selected, main = paste(input$modelType, "Coefficients"))
+    }
+  })
   
-  
-  # Selectivity Ratio
+  # Plotting function for selectivity ratio
   output$modelSelRatioPlot <- renderPlot({
-    req(analysisResults(), ModelResult())
+    req(ModelResult())
     
-    plotVIPScores(ModelResult()$Model, ncomp = 5, type = "h", show.labels = F)
-    plotSelectivityRatio(ModelResult()$Model, ncomp = 5, type = "h", show.labels = F)
+    model <- ModelResult()$Model
     
-  })  
+    if (input$modelType == "PLS" || input$modelType == "PLS-DA") {
+      plotVIPScores(model, ncomp = model$ncomp.selected, main = "Variable Importance in Projection (VIP)")
+      plotSelectivityRatio(model, ncomp = model$ncomp.selected, main = "Selectivity Ratio")
+    }
+  })
   
-  # Performance
+  # Plotting function for performance metrics
   output$modelPerfMetrPlot <- renderPlot({
     req(ModelResult())
     
-    plotPredictions(ModelResult()$Model, ncomp = 5, show.labels = F)
-    plotRMSE(ModelResult()$Model, ncomp = 5)
+    model <- ModelResult()$Model
     
-  })  
+    if (input$modelType == "PLS" || input$modelType == "PLS-DA") {
+      par(mfrow = c(2, 2))
+      plotPredictions(model, ncomp = model$ncomp.selected, show.labels = FALSE, main = "Predictions")
+      plotRMSE(model, ncomp = model$ncomp.selected, main = "RMSE")
+      plotScores(model, ncomp = model$ncomp.selected, main = "Scores")
+      plotLoadings(model, ncomp = model$ncomp.selected, main = "Loadings")
+    } else if (input$modelType == "RF" || input$modelType == "SVM" || input$modelType == "KNN") {
+      pred <- predict(model, ModelResult()$TestData[, -1])
+      actual <- ModelResult()$TestData[[ModelResult()$ResponseColumn]]
+      
+      if (input$taskType == "regression") {
+        ggplot() +
+          geom_point(aes(x = actual, y = pred), color = "blue") +
+          geom_abline(slope = 1, intercept = 0, color = "red") +
+          labs(title = "Predicted vs Actual", x = "Actual", y = "Predicted") +
+          theme_minimal()
+      } else {
+        cm <- confusionMatrix(pred, actual)
+        fourfoldplot(cm$table, color = c("#CC6666", "#99CC99"), conf.level = 0, margin = 1, main = "Confusion Matrix")
+      }
+    }
+  })
   
 }
 
