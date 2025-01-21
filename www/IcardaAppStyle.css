@@ -1,0 +1,25 @@
+/* Custom ICARDA green dashboard skin */
+.skin-icarda .main-header {
+  background-color: #006400; /* Replace this hex code with the exact ICARDA green */
+}
+
+.skin-icarda .main-sidebar {
+  background-color: #006400; /* Replace this hex code with the exact ICARDA green */
+}
+
+.skin-icarda .sidebar-menu > li.active > a {
+  background-color: #008000; /* Slightly lighter green for active menu item */
+}
+
+.skin-icarda .sidebar-menu > li > a {
+  color: white; /* Text color for sidebar items */
+}
+
+.skin-icarda .content-wrapper,
+.skin-icarda .right-side {
+  background-color: #f5f5f5; /* Light background for content area */
+}
+
+.skin-icarda .box {
+  border-top: 3px solid #006400; /* Green box header border */
+}
