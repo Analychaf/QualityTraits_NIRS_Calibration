@@ -1,10 +1,7 @@
 library(shiny)
 library(shinydashboard)
-library(shinyWidgets)
-library(shinyjs)
 library(mdatools)
 # will be used for More ML algorithms
-library(icardaFIGSr)
 library(caret) 
 library(DT)
 library(ggplot2)
