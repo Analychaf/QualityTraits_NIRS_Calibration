@@ -1,0 +1,8 @@
+Method,Description,Link
+SNV (Standard Normal Variate),Removes additive and multiplicative scatter effects and normalizes intensity in spectral data.,https://mdatools.github.io/preprocessing.html#snv
+MSC (Multiplicative Scatter Correction),Corrects additive and multiplicative effects by regressing individual spectra against the mean spectrum.,https://mdatools.github.io/preprocessing.html#msc
+Savitzky-Golay Smoothing (SVG),Smoothens data using polynomial fitting and allows for derivative calculation.,https://mdatools.github.io/preprocessing.html#smoothing
+SVG 1st Derivative,Applies Savitzky-Golay smoothing and calculates the first derivative to highlight slopes.,https://mdatools.github.io/preprocessing.html#smoothing
+SVG 2nd Derivative,Applies Savitzky-Golay smoothing and calculates the second derivative to emphasize curvature.,https://mdatools.github.io/preprocessing.html#smoothing
+Length Normalization,"Scales spectra to unit length, normalizing variations in sample quantity or path length.",https://mdatools.github.io/preprocessing.html#normalization
+Area Normalization,Normalizes spectra to a unit area under the curve.,https://mdatools.github.io/preprocessing.html#normalization
