@@ -7,6 +7,7 @@ library(DT)
 library(ggplot2)
 library(plotly)
 library(dplyr)
+library(readr)
 
 base::source(paste(getwd(),"nir_api.R", sep = "/"))
 
@@ -112,6 +113,7 @@ ui <- dashboardPage(
                                                      "Area_Normalization"), #Area normalization
                                          selected = "SNV")
                     ),
+                    column(3, uiOutput("methodParamsUI")),  # Dynamic UI for method parameters
                     column(3,actionButton("runPreprocessing", "Run Preprocessing",
                                           class = "btn-primary", 
                                           icon=icon("tools"))
@@ -591,6 +593,38 @@ server <- function(input, output, session) {
   
   ### Preprocessing
   
+  output$methodParamsUI <- renderUI({
+    req(input$preprocessingMethod)  # Ensure a method is selected
+    
+    switch(input$preprocessingMethod,
+           "SVG" = tagList(
+             numericInput("sg_window", "Window Size", value = 11, min = 3, step = 2),
+             numericInput("sg_poly", "Polynomial Order", value = 2, min = 1, max = 5),
+             numericInput("sg_deriv", "Derivative Order", value = 0, min = 0, max = 2)
+           ),
+           "SVG 1stD" = tagList(
+             numericInput("sg_window", "Window Size", value = 11, min = 3, step = 2),
+             numericInput("sg_poly", "Polynomial Order", value = 2, min = 1, max = 5),
+             numericInput("sg_deriv", "Derivative Order", value = 1, min = 1, max = 2)
+           ),
+           "SVG 2nD" = tagList(
+             numericInput("sg_window", "Window Size", value = 11, min = 3, step = 2),
+             numericInput("sg_poly", "Polynomial Order", value = 2, min = 1, max = 5),
+             numericInput("sg_deriv", "Derivative Order", value = 2, min = 2, max = 2)
+           ),
+           "MSC" = tagList(
+             checkboxInput("use_custom_ref", "Use Custom Reference Spectrum?", FALSE),
+             conditionalPanel(
+               condition = "input.use_custom_ref == true",
+               sliderInput("msc_ref_index", "Reference Spectrum Index", value = 1, min = 1, max = 100)
+             )
+           ),
+           "Length_Normalization" = numericInput("ln_normFactor", "Normalization Factor", value = 1),
+           "Area_Normalization" = numericInput("area_normFactor", "Normalization Factor", value = 1),
+           NULL  # Default case: No extra inputs for SNV
+    )
+  })
+  
   
   # Reactive to store preprocessed data
   preprocessedData <- reactiveVal()
@@ -598,8 +632,10 @@ server <- function(input, output, session) {
   # generate preprocessing methods
   output$PrepMethodsglossary <- renderDT({
     
-    glossary <- read.csv("preprocessing_methods_mdatools.csv", sep = ";")
+    glossary <- read.csv("preprocessing_methods_mdatools.csv", sep = ",")
+
     # Make links clickable and short
+    
     glossary$Link <- sapply(glossary$Link, function(url) {
       paste0('<a href="', url, '" target="_blank">Learn More</a>')
     })
@@ -613,42 +649,63 @@ server <- function(input, output, session) {
                 selected = "Protein")
   })
   
-  # Update to handle a single preprocessing method selection and apply it
   observeEvent(input$runPreprocessing, {
     req(nirData(), traitData(), input$preprocessingMethod)
     
     withProgress(message = 'Preparing Plots...', value = 0, {
       for (k in 1:10) {
         incProgress(1/10)
-        Sys.sleep(0.1)  # Simulated delay for fetching data
+        Sys.sleep(0.1)  # Simulated delay
       }
       
-      # Combine nirData and traitData
+      # Merge NIR and trait data
       Train_test_data <- nirData() %>%
-        left_join(traitData(), by = "QualityLabPlotNumber")
-      
-      Train_test_data <- Train_test_data %>%
+        left_join(traitData(), by = "QualityLabPlotNumber") %>%
         filter(!is.na(.[[input$trait]])) %>%
-        select(all_of(input$trait), grep("^[0-9]+$", names(.), value = TRUE))  # Select trait and wavelength columns
+        select(all_of(input$trait), grep("^[0-9]+$", names(.), value = TRUE))  # Select trait & spectral data
       
-      # Initialize dataList with original data for reference
-      dataList <- list("Original" = Train_test_data[,-1] )
+      # Store original data for reference
+      dataList <- list("Original" = Train_test_data[,-1])
       
-      # Apply the selected preprocessing method and update dataList
+      # Ensure necessary parameters exist before preprocessing
+      req(input$preprocessingMethod)
+      if (input$preprocessingMethod %in% c("SVG", "SVG 1stD", "SVG 2nD")) {
+        req(input$sg_window, input$sg_poly, input$sg_deriv)
+      }
+      
+      # Apply the selected preprocessing method
       dataList[[input$preprocessingMethod]] <- switch(input$preprocessingMethod,
                                                       "SNV" = prep.snv(as.matrix(Train_test_data[,-1])),
-                                                      "MSC" = prep.msc(as.matrix(Train_test_data[,-1])),
-                                                      "SVG" = prep.savgol(Train_test_data[,-1], width = 15, porder =3, dorder = 0),
-                                                      "SVG 1stD" = prep.savgol(Train_test_data[,-1], width = 15, porder = 3, dorder = 1),
-                                                      "SVG 2nD" = prep.savgol(Train_test_data[,-1], width = 15, porder = 3, dorder = 2),
+                                                      
+                                                      "MSC" = {
+                                                        if (input$use_custom_ref) {
+                                                          prep.msc(as.matrix(Train_test_data[,-1]), refInd = input$msc_ref_index)
+                                                        } else {
+                                                          prep.msc(as.matrix(Train_test_data[,-1]))  # Default mean spectrum
+                                                        }
+                                                      },
+                                                      
+                                                      "SVG" = prep.savgol(Train_test_data[,-1], width = input$sg_window, 
+                                                                          porder = input$sg_poly, dorder = input$sg_deriv),
+                                                      
+                                                      "SVG 1stD" = prep.savgol(Train_test_data[,-1], width = input$sg_window, 
+                                                                               porder = input$sg_poly, dorder = 1),
+                                                      
+                                                      "SVG 2nD" = prep.savgol(Train_test_data[,-1], width = input$sg_window, 
+                                                                              porder = input$sg_poly, dorder = 2),
+                                                      
                                                       "Area_Normalization" = prep.norm(Train_test_data[,-1], "area"),
+                                                      
                                                       "Length_Normalization" = prep.norm(Train_test_data[,-1], "length"),
-                                                      default = Train_test_data[,-1]
+                                                      
+                                                      default = Train_test_data[,-1]  # If no preprocessing is selected
       )
-      # Store the processed data
+      
+      # Store preprocessed data
       preprocessedData(dataList)
     })
   })
+  
   
   # Plot for Original Data
   output$originalDataPlot <- renderPlot({
