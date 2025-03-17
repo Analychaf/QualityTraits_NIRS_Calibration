@@ -143,7 +143,8 @@ ui <- dashboardPage(
                   fluidRow(
                     column(3,uiOutput("cropSelectAnalysis")),
                     column(3,selectInput("multivariateAnalysis", "Multivariate Analysis Method",
-                                         choices = c("PCA", "SOM", "SNE", "UMAP"), selected = "PCA")), 
+                                         choices = c("PCA", "SOM", "SNE", "UMAP"), selected = "PCA"),
+                           uiOutput("PCAComp")),
                     column(3, uiOutput("traittoplot")),
                     column(3, actionButton("runAnalysis", "Run Analysis",
                                            class = "btn-primary", 
@@ -332,26 +333,26 @@ server <- function(input, output, session) {
   output$cropSelect <- renderUI({
     selectInput("crop", "Crop",
                 choices = c("Barley","Bread Wheat", "Chickpea","Lentil","Faba Bean","Durum Wheat"),
-                selected = NULL, multiple = T)
+                selected = NULL, multiple = F)
   })
   
   # Additional UI components for rendering the other crop selections
   output$cropSelectPrep <- renderUI({
     req(input$crop)
     selectInput("cropSelectPrep", "Crop  ",
-                choices = input$crop, selected = input$crop, multiple = TRUE)
+                choices = input$crop, selected = input$crop, multiple = FALSE)
   })
   
   output$cropSelectAnalysis <- renderUI({
     req(input$crop)
     selectInput("cropSelectAnalysis", "Crop ",
-                choices = input$crop, selected = input$crop, multiple = TRUE)
+                choices = input$crop, selected = input$crop, multiple = FALSE)
   })
   
   output$cropSelectModel <- renderUI({
     req(input$crop)
     selectInput("cropSelectModel", "Crop  ",
-                choices = input$crop, selected = input$crop, multiple = TRUE)
+                choices = input$crop, selected = input$crop, multiple = FALSE)
   })
   
   
@@ -590,39 +591,53 @@ server <- function(input, output, session) {
     }
   })
   
-  
   ### Preprocessing
   
   output$methodParamsUI <- renderUI({
     req(input$preprocessingMethod)  # Ensure a method is selected
     
     switch(input$preprocessingMethod,
+           # **Savitzky-Golay (General Case)**
            "SVG" = tagList(
-             numericInput("sg_window", "Window Size", value = 11, min = 3, step = 2),
-             numericInput("sg_poly", "Polynomial Order", value = 2, min = 1, max = 5),
-             numericInput("sg_deriv", "Derivative Order", value = 0, min = 0, max = 2)
+             sliderInput("sg_window", "Window Size", value = 11, min = 3,max = 303, step = 2),
+             sliderInput("sg_poly", "Polynomial Order", value = 2, min = 1, max = 5),
+             uiOutput("sg_deriv_UI")  # Dynamically updates derivative order
            ),
+           
+           # **Savitzky-Golay (1st Derivative)**
            "SVG 1stD" = tagList(
-             numericInput("sg_window", "Window Size", value = 11, min = 3, step = 2),
-             numericInput("sg_poly", "Polynomial Order", value = 2, min = 1, max = 5),
-             numericInput("sg_deriv", "Derivative Order", value = 1, min = 1, max = 2)
+             sliderInput("sg_window", "Window Size", value = 11, min = 3,max = 303, step = 2),
+             sliderInput("sg_poly", "Polynomial Order", value = 2, min = 1, max = 5),
+             uiOutput("sg_deriv_UI")  # Ensures correct max derivative order
            ),
+           
+           # **Savitzky-Golay (2nd Derivative)**
            "SVG 2nD" = tagList(
-             numericInput("sg_window", "Window Size", value = 11, min = 3, step = 2),
-             numericInput("sg_poly", "Polynomial Order", value = 2, min = 1, max = 5),
-             numericInput("sg_deriv", "Derivative Order", value = 2, min = 2, max = 2)
+             sliderInput("sg_window", "Window Size", value = 11, min = 3, max = 303, step = 2),
+             sliderInput("sg_poly", "Polynomial Order", value = 2, min = 1, max = 5),
+             uiOutput("sg_deriv_UI")  # Ensures correct max derivative order
            ),
            "MSC" = tagList(
              checkboxInput("use_custom_ref", "Use Custom Reference Spectrum?", FALSE),
              conditionalPanel(
                condition = "input.use_custom_ref == true",
-               sliderInput("msc_ref_index", "Reference Spectrum Index", value = 1, min = 1, max = 100)
+               selectizeInput("msc_ref_index", "Select Reference Spectrum",
+                              choices = 1:ncol(nirData()),  # Choices loaded dynamically
+                              selected = 1, multiple = FALSE)
              )
            ),
+           # **Normalization Methods**
            "Length_Normalization" = numericInput("ln_normFactor", "Normalization Factor", value = 1),
            "Area_Normalization" = numericInput("area_normFactor", "Normalization Factor", value = 1),
-           NULL  # Default case: No extra inputs for SNV
+           
+           NULL  # Default case: No extra inputs for SNV or None
     )
+  })
+  
+  # **Dynamically Adjust the Derivative Order Based on Polynomial Order**
+  output$sg_deriv_UI <- renderUI({
+    req(input$sg_poly)  # Ensure polynomial order exists
+    numericInput("sg_deriv", "Derivative Order", value = input$sg_poly - 1, min = 0, max = 2)
   })
   
   
@@ -649,63 +664,101 @@ server <- function(input, output, session) {
                 selected = "Protein")
   })
   
+  # ---- Server: Load MSC Reference Options Efficiently ----
+  observe({
+    req(nirData())
+    
+    updateSelectizeInput(session, "msc_ref_index",
+                         choices = seq_len(nrow(nirData())),
+                         server = TRUE)
+  })
+  
+  # ---- Run Preprocessing ----
   observeEvent(input$runPreprocessing, {
     req(nirData(), traitData(), input$preprocessingMethod)
     
     withProgress(message = 'Preparing Plots...', value = 0, {
       for (k in 1:10) {
         incProgress(1/10)
-        Sys.sleep(0.1)  # Simulated delay
+        Sys.sleep(0.1)
       }
       
       # Merge NIR and trait data
       Train_test_data <- nirData() %>%
         left_join(traitData(), by = "QualityLabPlotNumber") %>%
         filter(!is.na(.[[input$trait]])) %>%
-        select(all_of(input$trait), grep("^[0-9]+$", names(.), value = TRUE))  # Select trait & spectral data
+        select(all_of(input$trait), grep("^[0-9]+$", names(.), value = TRUE))  
+      
+      # Convert spectral data to matrix
+      spectral_matrix <- as.matrix(Train_test_data[,-1])
       
       # Store original data for reference
-      dataList <- list("Original" = Train_test_data[,-1])
+      dataList <- list("Original" = spectral_matrix)
       
-      # Ensure necessary parameters exist before preprocessing
+      # Ensure valid preprocessing method
       req(input$preprocessingMethod)
+      
+      # Savitzky-Golay: Validate derivative order
       if (input$preprocessingMethod %in% c("SVG", "SVG 1stD", "SVG 2nD")) {
-        req(input$sg_window, input$sg_poly, input$sg_deriv)
+        req(input$sg_window, input$sg_poly)
+        valid_derivative_order <- min(input$sg_deriv, input$sg_poly - 1)
       }
       
-      # Apply the selected preprocessing method
-      dataList[[input$preprocessingMethod]] <- switch(input$preprocessingMethod,
-                                                      "SNV" = prep.snv(as.matrix(Train_test_data[,-1])),
-                                                      
-                                                      "MSC" = {
-                                                        if (input$use_custom_ref) {
-                                                          prep.msc(as.matrix(Train_test_data[,-1]), refInd = input$msc_ref_index)
-                                                        } else {
-                                                          prep.msc(as.matrix(Train_test_data[,-1]))  # Default mean spectrum
-                                                        }
-                                                      },
-                                                      
-                                                      "SVG" = prep.savgol(Train_test_data[,-1], width = input$sg_window, 
-                                                                          porder = input$sg_poly, dorder = input$sg_deriv),
-                                                      
-                                                      "SVG 1stD" = prep.savgol(Train_test_data[,-1], width = input$sg_window, 
-                                                                               porder = input$sg_poly, dorder = 1),
-                                                      
-                                                      "SVG 2nD" = prep.savgol(Train_test_data[,-1], width = input$sg_window, 
-                                                                              porder = input$sg_poly, dorder = 2),
-                                                      
-                                                      "Area_Normalization" = prep.norm(Train_test_data[,-1], "area"),
-                                                      
-                                                      "Length_Normalization" = prep.norm(Train_test_data[,-1], "length"),
-                                                      
-                                                      default = Train_test_data[,-1]  # If no preprocessing is selected
+      # ---- Apply Preprocessing ----
+      preprocessed_spectra <- switch(input$preprocessingMethod,
+                                     "SNV" = prep.snv(spectral_matrix),
+                                     
+                                     "MSC" = {
+                                       if (input$use_custom_ref) {
+                                         req(input$msc_ref_index)
+                                         ref_index <- as.integer(input$msc_ref_index)
+                                         
+                                         # Validate reference spectrum index
+                                         if (!is.na(ref_index) && ref_index > 0 && ref_index <= nrow(spectral_matrix)) {
+                                           custom_ref_spectrum <- as.numeric(spectral_matrix[ref_index, ])
+                                           
+                                           # Remove NA values in reference spectrum
+                                           if (anyNA(custom_ref_spectrum)) {
+                                             showNotification("Reference spectrum contains NA values. Using mean spectrum instead.", type = "warning")
+                                             prep.msc(spectral_matrix)  # Fallback to mean spectrum
+                                           } else {
+                                             prep.msc(spectral_matrix, mspectrum = custom_ref_spectrum)
+                                           }
+                                         } else {
+                                           showNotification("Invalid reference index. Using mean spectrum.", type = "warning")
+                                           prep.msc(spectral_matrix)
+                                         }
+                                       } else {
+                                         prep.msc(spectral_matrix)  # Default to mean spectrum
+                                       }
+                                     },
+                                     
+                                     "SVG" = prep.savgol(spectral_matrix, width = input$sg_window, 
+                                                         porder = input$sg_poly, dorder = valid_derivative_order),
+                                     
+                                     "SVG 1stD" = prep.savgol(spectral_matrix, width = input$sg_window, 
+                                                              porder = input$sg_poly, dorder = min(1, input$sg_poly - 1)),
+                                     
+                                     "SVG 2nD" = prep.savgol(spectral_matrix, width = input$sg_window, 
+                                                             porder = input$sg_poly, dorder = min(2, input$sg_poly - 1)),
+                                     
+                                     "Area_Normalization" = prep.norm(spectral_matrix, "area"),
+                                     
+                                     "Length_Normalization" = prep.norm(spectral_matrix, "length"),
+                                     
+                                     "None" = spectral_matrix,  
+                                     
+                                     {
+                                       showNotification("Invalid preprocessing method selected. Using raw data.", type = "warning")
+                                       spectral_matrix
+                                     }
       )
       
-      # Store preprocessed data
+      # Store preprocessed data correctly
+      dataList[[input$preprocessingMethod]] <- preprocessed_spectra
       preprocessedData(dataList)
     })
   })
-  
   
   # Plot for Original Data
   output$originalDataPlot <- renderPlot({
@@ -760,8 +813,6 @@ server <- function(input, output, session) {
     }
   })
   
-  
-  
   ### Data Analysis
   
   # Trait selection UI 
@@ -769,6 +820,7 @@ server <- function(input, output, session) {
     req(traitData())
     selectInput("traittoplot", "Trait to analyze", choices = colnames(traitData())[18:46], selected = "Protein")
   })
+  
   
   # Define analysisResults as a reactive value to store PCA model results
   analysisResults <- reactiveVal(NULL)
@@ -807,10 +859,8 @@ server <- function(input, output, session) {
                    analysisResults(list(model = modelPCA, trainIndex = trainIndex,
                                         Xcalib = Xc, Ycalib=yc, CombinedData=combinedData, 
                                         traitData = combinedData[ ,1], NIRData = combinedData[,-1]))
-                   
                  })
-    
-  })
+           })
   
   # PCA Scores with Selected Trait
   output$Scores <- renderPlot({
@@ -843,6 +893,7 @@ server <- function(input, output, session) {
       plotResiduals(results$model, ncomp=5,  main = paste("PCA Residuals of", input$traittoplot))
     }
   })
+  
   # Plot for Explained Cumulative Variance 
   output$CumulVariance <- renderPlot({
     req(analysisResults())
